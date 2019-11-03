@@ -11,8 +11,11 @@ class StageToRedshiftOperator(BaseOperator):
         FROM '{}'
         ACCESS_KEY_ID '{}'
         SECRET_ACCESS_KEY '{}'
-        {}
-        {}
+        REGION '{}'
+        TIMEFORMAT as 'epochmillisecs'
+        TRUNCATECOLUMNS BLANKSASNULL EMPTYASNULL
+        IGNOREHEADER {}
+        {} '{}'
     """
 
     @apply_defaults
@@ -23,8 +26,10 @@ class StageToRedshiftOperator(BaseOperator):
                  s3_bucket="",
                  s3_key="",
                  region="",
-                 file_format="CSV",
-                 delimiter=",",
+                 ignore_headers=1,
+                 file_format="JSON",
+                 json_path="",
+                 file_dated=False,
                  *args, **kwargs):
 
         super(StageToRedshiftOperator, self).__init__(*args, **kwargs)
@@ -34,9 +39,11 @@ class StageToRedshiftOperator(BaseOperator):
         self.s3_key = s3_key
         self.aws_credentials_id = aws_credentials_id
         self.region= region
+        self.ignore_headers = ignore_headers
         self.file_format = file_format
+        self.json_path = json_path
+        self.file_dated = file_dated
         self.execution_date = kwargs.get('ds')
-        self.delimiter = delimiter
 
     def execute(self, context):
         aws_hook = AwsHook(self.aws_credentials_id)
@@ -55,21 +62,22 @@ class StageToRedshiftOperator(BaseOperator):
         
         self.log.info('Lets see...{}'.format(s3_path))
         
-        additional=""
-        if self.file_format == 'CSV':
-            additional = "TIMEFORMAT as 'epochmillisecs' TRUNCATECOLUMNS BLANKSASNULL EMPTYASNULL IGNOREHEADER 1"
-            if self.delimiter != ',':
-                additional = additional + " DELIMITER '" + self.delimiter + "'"    
+        if self.json_path == "":
+            js_path = "auto"
+        else:
+            js_path = "s3://{}/".format(self.s3_bucket) + self.json_path        
                      
         formatted_sql = self.copy_sql.format(
             self.table,
             s3_path,
             credentials.access_key,
             credentials.secret_key,
+            self.region,
+            self.ignore_headers,
             self.file_format,
-            additional
+            js_path
         )
-
+        
         redshift.run(formatted_sql)
 
 
